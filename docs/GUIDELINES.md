@@ -82,14 +82,18 @@ WireEvent (shared.wire.in.events)
 ```text
 dev.ebaptistella.monolith/
 ├── MonolithApplication.java
-├── config/                         # cross-cutting (security, rabbit, openapi, idempotency, observability)
+├── config/                         # cross-cutting (security, rabbit, openapi, idempotency, observability, retry)
+│   ├── retry/RetryConfiguration.java
+│   └── idempotency/IdempotencyWebFilter.java
 ├── shared/                         # módulo Modulith OPEN
 │   ├── wire/in/events/             # payloads @Externalized
 │   ├── models/auth/                # AuthenticatedUser (pós-auth, não é wire)
 │   ├── contracts/                  # SPI sync entre módulos e config
 │   ├── idempotency/                # IdempotencyKeys, Context, fingerprint
+│   ├── resilience/                 # NotificationPlatformConcurrencyLimiter
+│   ├── web/                        # GlobalExceptionHandler, ProblemDetailSupport
 │   ├── EventRoutes.java            # exchanges, filas, DLQ, EXTERNALIZED keys
-│   └── web/GlobalExceptionHandler  # ProblemDetail + Sentry
+│   └── package-info.java           # módulo OPEN
 └── modules/<modulo>/
     ├── package-info.java           # @ApplicationModule(allowedDependencies = {"shared"})
     ├── models/                     # records de domínio
@@ -218,8 +222,10 @@ OpenAPI: documentar header `X-Idempotency-Key` nos POST/PUT/PATCH mutáveis (par
 | Artefato | Responsabilidade |
 |----------|------------------|
 | `*Entity` | Mapeamento JPA; `fromModel` / `toModel`; package-private quando possível |
-| `*JpaRepository` | Spring Data |
+| `*JpaRepository` | Spring Data; `@EntityGraph` em leituras que precisam de coleções `LAZY` |
 | `*Persistence` | API usada pelos controllers; `@CachePut` / cache reader aqui, não no controller |
+
+**Fetch strategy:** coleções agregadas (`AccountEntity.roles`, `OrderEntity.lines`) usam `FetchType.LAZY` + `@BatchSize`; repositórios expõem `@EntityGraph(attributePaths = …)` nos métodos usados por auth e fluxos de pedido.
 
 **Entity:**
 
@@ -239,6 +245,7 @@ class CustomerEntity {
 
 - Classe `*HttpServer` com `@RestController` e `@RequestMapping("/api/v1/...")`.
 - **Delega** a controllers; traduz wire via adapters.
+- **Observação:** `@Observed(name = "http.server", contextualName = "...")` por endpoint (Micrometer).
 - **Erros de domínio rejeitados:** `ResponseStatusException` com status HTTP adequado.
 - **Replay idempotente:** `IdempotentHttpOutcome` → `200` vs `201`.
 - **Sem** acesso direto a JPA (ArchUnit).
@@ -375,17 +382,21 @@ Detalhes por estratégia: [modules/identity.md](modules/identity.md).
 | Rejeição de negócio na borda | `ResponseStatusException` no HttpServer |
 | Idempotência | `IdempotencyConflictException` → 409 |
 | Não encontrado | `NoSuchElementException` → 404 |
-| E-mail / OAuth2 externo | Resilience4j `@CircuitBreaker` / `@Retry` + `EmailDispatchException` → 503 |
+| E-mail / OAuth2 externo | `ResilientEmailSender` / `OAuth2NotificationPlatformClient` com `@Retryable` + `@Recover`; `EmailDispatchException` → 503 |
+| Idempotência no filter | `IdempotencyWebFilter` → `ProblemDetailSupport` (`application/problem+json`) |
 | Não tratado | Sentry via `GlobalExceptionHandler.capture` |
 
 ---
 
 ## 9. Observabilidade
 
+- **Logs estruturados:** ECS nativo (`logging.structured.format.console=ecs`); sem `logstash-logback-encoder`; contexto JSON inclui `traceId`, `spanId`, `idempotencyKey`.
 - Rabbit: `spring.rabbitmq.*.observation-enabled=true` (traceparent W3C).
+- HTTP inbound: `@Observed(name = "http.server", …)` nos `*HttpServer`.
 - Consumers e SMTP: `@Observed`.
-- Logs: `traceId`/`spanId` via MDC; `idempotencyKey` no MDC durante request HTTP.
+- HTTP outbound: `RestClient`/`HttpServiceProxyFactory` herda observação Micrometer; timeouts em `spring.http.client.*`.
 - DLQ: `DeadLetterConsumer` → `SentryDeadLetterReporter`.
+- Modulith: `/actuator/modulith` (`spring-modulith-actuator`).
 - Perfil opcional `observability` para export OTLP/Jaeger.
 
 ---
@@ -397,7 +408,8 @@ Detalhes por estratégia: [modules/identity.md](modules/identity.md).
 | Unitário | `@Tag("unit")`, Mockito para persistence/producers | `mvn test` (Surefire) |
 | Integração | `@Tag("integration")`, `*IT.java`, Testcontainers | `mvn verify` (Failsafe) |
 | E2E | `@Tag("e2e")`, `*E2ETest.java`, Rest Assured | `mvn verify` |
-| Arquitetura | `ArchitectureTest` — fronteiras de pacote | `mvn test` |
+| Modulith | `@EnableScenarios` + `Scenario` em `CustomerModuleIT`, `OrderModuleIT` | `mvn verify` |
+| Arquitetura | `ArchitectureTest`, `ModulithStructureTest` | `mvn test` |
 
 **Estrutura espelhada:**
 
@@ -411,7 +423,13 @@ src/test/java/.../modules/<modulo>/
 
 **Controller unit test:** mock de `*Persistence` e `*Producer`; setar `IdempotencyContext.setRootKey` no `@BeforeEach` quando o controller usa idempotência.
 
-**Suporte E2E:** `IntegrationTestContainers` + `IdempotencyTestSupport`.
+**Suporte E2E/IT:**
+
+- `IntegrationTestContainers` — PostgreSQL, Redis, RabbitMQ (containers estáticos reutilizáveis + `@DynamicPropertySource`).
+- `TestProfileIntegrationTest` — `@ActiveProfiles("test")`, reset de `SentEmailRecorder` e dedup de e-mail no `@BeforeEach`.
+- `@DirtiesContext(AFTER_CLASS)` na base — evita listeners Rabbit concorrentes quando perfis Spring diferem entre classes de teste.
+- `IdempotencyTestSupport`, `AsyncTestSupport`, `LocalAuthE2eContextInitializer`.
+- `IdempotencyWebFilterTest` — unitário de `application/problem+json` no filter.
 
 ---
 
@@ -511,13 +529,16 @@ Use antes de abrir PR (espelha [CONVENTIONS.md](CONVENTIONS.md)):
 - [ ] `controllers/` sem wire
 - [ ] `http_server` sem JPA direto
 - [ ] Consumer: wire → adapter → controller; `@Observed`; sem Slf4j
+- [ ] `*HttpServer` com `@Observed(name = "http.server", …)` por endpoint
 - [ ] `inbound` → JPA, não controller
 - [ ] Evento com `@Externalized` + `EventRoutes` + topology DLQ
 - [ ] POST mutável: header idempotency documentado; replay 200; conflito 409
 - [ ] Steps saga: `idempotency_key` derivada + UNIQUE
 - [ ] Producer sem dedup condicional
-- [ ] Entity JPA: getter/setter/no-args protected
-- [ ] Testes unit + E2E (header quando POST)
+- [ ] Entity JPA: getter/setter/no-args protected; coleções agregadas em `LAZY` + `@EntityGraph` onde necessário
+- [ ] Resiliência externa via `@Retryable`/`@Recover` (não Resilience4j)
+- [ ] Filter de idempotência retorna `ProblemDetailSupport` (`application/problem+json`)
+- [ ] Testes unit + E2E (header quando POST); IT/E2E estendem `IntegrationTestContainers`
 - [ ] `ArchitectureTest` atualizado se novo módulo
 - [ ] `docs/modules/<modulo>.md` atualizado
 
@@ -536,7 +557,11 @@ Use antes de abrir PR (espelha [CONVENTIONS.md](CONVENTIONS.md)):
 | Evento + producer | `CustomerCreatedEvent`, `CustomerEventProducer` |
 | EventRoutes + topology | `shared/EventRoutes.java`, `config/RabbitTopologyConfiguration.java` |
 | Testes arquitetura | `architecture/ArchitectureTest.java` |
-| E2E helper | `support/IdempotencyTestSupport.java` |
+| E2E helper | `support/IdempotencyTestSupport.java`, `support/TestProfileIntegrationTest.java` |
+| HTTP client declarativo | `KeycloakTokenApi`, `NotificationPlatformApi` |
+| Resiliência e-mail | `modules/email/diplomat/ResilientEmailSender.java` |
+| ProblemDetail | `shared/web/ProblemDetailSupport.java`, `config/idempotency/IdempotencyWebFilter.java` |
+| Modulith runtime | `GET /actuator/modulith`, `ModulithActuatorIT` |
 
 Documentação por domínio: [docs/modules/](modules/).
 

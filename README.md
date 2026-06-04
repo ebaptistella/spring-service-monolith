@@ -192,8 +192,9 @@ Para simular falha de pagamento em testes/E2E: `app.finance.payment-gateway.alwa
 | Mensageria | Spring AMQP, Modulith Events AMQP |
 | E-mail | Spring Mail, MailHog (local) |
 | Cache | Redis (infra compartilhada) |
-| Resiliência | Resilience4j (circuit breaker + retry no envio de e-mail e integração OAuth2) |
-| Erros | Sentry (opcional via `SENTRY_DSN`) |
+| Resiliência | spring-retry (`@Retryable`/`@Recover`); limitador de concorrência em `shared/resilience` |
+| Logging | ECS estruturado nativo Boot (`logging.structured.format.console=ecs`) |
+| Erros | Sentry (opcional via `SENTRY_DSN`); `ProblemDetailSupport` + RFC 7807 |
 | Segurança | Spring Security, OAuth2 Resource Server / Client / Authorization Server, Keycloak |
 | Eventos | Spring Modulith Events API (`@Externalized` + externalização AMQP) |
 | Produtividade | Lombok, MapStruct |
@@ -228,6 +229,8 @@ docker compose up -d --build
 ## Observabilidade
 
 - **Métricas**: `/actuator/prometheus`
+- **Modulith**: `/actuator/modulith` (dependência `spring-modulith-actuator`)
+- **Logs estruturados**: formato ECS no console (`logging.structured.format.console=ecs`); MDC inclui `traceId`, `spanId` e `idempotencyKey`
 - **Tracing OTLP**: desligado por padrão (`OTEL_EXPORT_ENABLED=false`) — evita erro ao subir sem coletor em `localhost:4318`
 - **Jaeger** (opcional no Docker): http://localhost:16686 — UI com alternância claro/escuro (`docker/jaeger/ui-config.json`, ver [Frontend/UI](https://www.jaegertracing.io/docs/2.dev/deployment/frontend-ui/))
 
@@ -263,16 +266,22 @@ Outras camadas (perfil `observability`):
 | Biblioteca | Uso no projeto |
 |------------|----------------|
 | **spring-modulith-events-api** | `@Externalized` em `shared.wire.in.events` + `ModulithEventConfiguration` |
-| **resilience4j** | `@CircuitBreaker` / `@Retry` em `SendEmailController` e `OAuth2NotificationPlatform` |
-| **Sentry** | `Sentry.captureException` em `GlobalExceptionHandler` e fallbacks |
-| **oauth2-client** | `OAuth2NotificationPlatform` (client credentials) quando `NOTIFICATION_PLATFORM_ENABLED=true` |
+| **spring-modulith-actuator** | `/actuator/modulith` — estrutura de módulos em runtime |
+| **spring-retry** | `@Retryable`/`@Recover` em `ResilientEmailSender` e `OAuth2NotificationPlatformClient` |
+| **Sentry** | `Sentry.captureException` em `GlobalExceptionHandler`, fallbacks e DLQ |
+| **oauth2-client** | `OAuth2NotificationPlatformClient` (client credentials) quando `NOTIFICATION_PLATFORM_ENABLED=true` |
+| **HttpServiceProxyFactory** | Clientes declarativos `KeycloakTokenApi` e `NotificationPlatformApi` (`@HttpExchange`) |
 
 ## Testes
 
 ```bash
-mvn test      # unitários
-mvn verify    # integração + e2e (Docker)
+mvn test      # unitários (@Tag unit)
+mvn verify    # integração + e2e (Docker; @Tag integration,e2e)
 ```
+
+Infra compartilhada: `IntegrationTestContainers` (PostgreSQL, Redis, RabbitMQ reutilizáveis + `@DynamicPropertySource`). A maioria dos E2E estende `TestProfileIntegrationTest` (perfil `test`, reset de `SentEmailRecorder` entre testes). Contextos Spring com perfis distintos usam `@DirtiesContext(AFTER_CLASS)` para evitar listeners Rabbit concorrentes na suite completa.
+
+Testes Modulith: `CustomerModuleIT`, `OrderModuleIT` (`@EnableScenarios` + `Scenario`); `ModulithActuatorIT` valida `/actuator/modulith`.
 
 ## Novo módulo
 

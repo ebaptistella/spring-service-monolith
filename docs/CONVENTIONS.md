@@ -11,7 +11,9 @@ Guia **resumido** de padrões para reduzir boilerplate mantendo **Diplomat Archi
 | **Lombok** | `@RequiredArgsConstructor`, `@Slf4j`, getters/setters em JPA | `@Data` em `@Entity` |
 | **Spring Cache** | `@Cacheable` / `@CachePut` no diplomat JPA/cache | Camada de cache separada em CRUD simples |
 | **Records** | Models, wire DTOs, eventos | Entidades JPA (use classes + Lombok) |
-| **Resilience4j** | `@CircuitBreaker` / `@Retry` em integrações externas (e-mail, HTTP OAuth2) | Em CRUD local |
+| **Resilience4j** | — | **Removido**; usar spring-retry abaixo |
+| **spring-retry** | `@Retryable` / `@Recover` em SMTP e HTTP OAuth2 externo | Em CRUD local |
+| **ProblemDetailSupport** | Erros RFC 7807 no filter e no `GlobalExceptionHandler` | JSON manual ad hoc |
 | **Sentry** | Erros não tratados e fallbacks de resiliência | Fluxo feliz |
 | **Modulith Events API** | `@Externalized` + `ModulithEventConfiguration` | Eventos internos sem contrato |
 
@@ -20,11 +22,16 @@ Guia **resumido** de padrões para reduzir boilerplate mantendo **Diplomat Archi
 ```text
 dev.ebaptistella.monolith/
 ├── MonolithApplication.java
-├── config/                    # cross-cutting runtime (security, openapi, rabbit, observability)
+├── config/                    # cross-cutting runtime (security, openapi, rabbit, observability, retry)
+│   └── retry/RetryConfiguration.java   # @EnableRetry
 ├── shared/                    # módulo Modulith OPEN (wire de integração, models/contratos compartilhados)
 │   ├── wire/in/events/       # payloads de mensageria (@Externalized)
 │   ├── models/auth/          # AuthenticatedUser, Role, AuthProvider (modelo interno pós-auth)
-│   └── contracts/            # IdentityResolver, CurrentUserProvider (SPI config ↔ identity)
+│   ├── contracts/            # IdentityResolver, CurrentUserProvider (SPI config ↔ identity)
+│   ├── idempotency/          # IdempotencyContext, IdempotencyKeys, filter helpers
+│   ├── resilience/           # NotificationPlatformConcurrencyLimiter
+│   ├── web/                  # GlobalExceptionHandler, ProblemDetailSupport
+│   └── EventRoutes.java      # exchanges, filas, DLQ, EXTERNALIZED keys
 └── modules/<nome>/
     ├── models/                # entidades de domínio
     ├── logic/                 # regras puras (sem Spring, sem I/O)
@@ -124,6 +131,8 @@ config/
 ├── openapi/        # springdoc
 ├── observability/  # Redis/Liquibase tracing
 ├── modulith/       # métricas e observação Modulith
+├── retry/          # RetryConfiguration (@EnableRetry)
+├── idempotency/    # IdempotencyWebFilter, IdempotencyAmqpConfiguration
 ├── ModulithEventConfiguration.java
 ├── RabbitTopologyConfiguration.java   # exchange + DLX/DLQ por canal
 ├── RabbitListenerConfiguration.java   # retry + JSON converter
@@ -147,7 +156,7 @@ Filas existentes **sem** argumentos `x-dead-letter-*` precisam ser recriadas (`d
 ### Observabilidade em fluxos assíncronos
 
 - **RabbitMQ** (baseline): `spring.rabbitmq.template/listener.simple.observation-enabled=true` injeta/extrai `traceparent` (W3C) nos headers AMQP.
-- **Logs**: `logback-spring.xml` inclui `traceId`/`spanId` do MDC (preenchido pelo `micrometer-tracing-bridge-otel` em qualquer span ativo).
+- **Logs**: formato ECS (`logging.structured.format.console=ecs`); MDC inclui `traceId`, `spanId` e `idempotencyKey` (`logging.structured.json.context.include`).
 - **Consumers** (`@Observed` + listener observation): spans filhos continuam o trace da mensagem; logs no consumer carregam o mesmo `traceId`.
 - **Cadeia notification → email**: publicação do segundo evento ocorre dentro do consumer ativo → trace propagado automaticamente.
 - **DLQ / Sentry**: `TraceContextSupport` anexa `traceId`/`spanId` (MDC) e `traceparent` (header da mensagem) ao evento Sentry.
@@ -210,6 +219,9 @@ Depois:
 | Unitário | `@Tag("unit")`, mock de persistence/producers |
 | Integração | `@Tag("integration")`, `*IT.java`, Testcontainers |
 | E2E | `@Tag("e2e")`, `*E2ETest.java`, Rest Assured |
+| Modulith | `@EnableScenarios` + `Scenario` em `*ModuleIT.java`; `ModulithActuatorIT` para `/actuator/modulith` |
+
+**Suporte compartilhado:** `IntegrationTestContainers` (infra) → `TestProfileIntegrationTest` (perfil `test`, reset de e-mail entre testes). E2E com auth local/JWT usam `@SpringBootTest` próprio + `@DirtiesContext(AFTER_CLASS)` herdado da base.
 
 ## Checklist de revisão
 
@@ -225,4 +237,4 @@ Referência Diplomat: [clojure-guidelines.mdc](../../../cursor-rules/clojure/clo
 - [ ] POST mutáveis documentam `X-Idempotency-Key`; steps persistem `idempotency_key` derivada
 - [ ] `@Observed` em I/O relevante (SMTP, consumers, HttpServers)
 - [ ] POST mutáveis usam `ProblemDetailSupport` em erros de filter quando aplicável
-- [ ] Testes de integração estendem `IntegrationTestContainers` (containers reutilizáveis + perfil `test`)
+- [ ] Testes de integração estendem `IntegrationTestContainers`; E2E com perfil `test` preferem `TestProfileIntegrationTest`

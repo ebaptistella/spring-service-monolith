@@ -47,7 +47,7 @@ Published event wire: `shared.wire.in.events.CustomerCreatedEvent`.
 
 | Subfolder | Classes |
 |-----------|---------|
-| **http_server** | `CustomerHttpServer` — `POST/GET /api/v1/customers` |
+| **http_server** | `CustomerHttpServer` — `POST/GET /api/v1/customers`; `@Observed` por endpoint |
 | **jpa** | `CustomerPersistence`, `CustomerEntity`, `CustomerJpaRepository` |
 | **cache** | `CustomerCacheConfiguration`, `CustomerCacheNames`, `CustomerCacheReader` |
 | **inbound** | `LocalCustomerQuery` → `CustomerQuery` |
@@ -86,6 +86,7 @@ Subscriber: `notification` (`CustomerCreatedConsumer`).
 | `CustomerRulesTest` | Registration rules |
 | `CustomerAdapterTest` | Wire ↔ model |
 | `RegisterCustomerControllerTest` | Register + event publish |
-| `CustomerRegistrationE2ETest`, `AuthenticatedCustomerE2ETest` | HTTP + welcome email via `SentEmailRecorder` |
+| `CustomerRegistrationE2ETest`, `ZCustomerJwtAuthE2ETest` | HTTP + welcome email via `SentEmailRecorder` |
+| `CustomerModuleIT` | Modulith scenario — publica `CustomerCreatedEvent` |
 | `ArchitectureTest` | Layering |
 | `EventRoutesTest`, `RabbitTopologyConfigurationTest` | Topology includes customer queue |

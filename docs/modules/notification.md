@@ -62,7 +62,7 @@ No module `wire/in` or `wire/out`. Uses `shared.wire.in.events` for Rabbit paylo
 | **consumer** | `CustomerCreatedConsumer`, `LocalAccountRegisteredConsumer`, `OrderConfirmedConsumer`, `OrderCancelledConsumer`, `AccountStatusChangedConsumer` |
 | **inbound** | — |
 | **outbound** | — |
-| **Other** | `NotificationPlatform`, `LoggingNotificationPlatform`, `OAuth2NotificationPlatformClient`; `config/NotificationPlatformConfiguration`, `NotificationPlatformProperties` |
+| **Other** | `NotificationPlatform`, `LoggingNotificationPlatform`, `OAuth2NotificationPlatformClient`, `NotificationPlatformApi`; `NotificationPlatformConcurrencyLimiter` (`shared/resilience`); `config/NotificationPlatformConfiguration`, `NotificationPlatformProperties` |
 
 ## 8. Sync integration and async
 
@@ -82,6 +82,8 @@ None (no `shared.contracts` implementation in this module).
 | **Out** | `EmailDispatchRequestedEvent` | `EMAIL_DISPATCH_EXCHANGE` → `EMAIL_DISPATCH_QUEUE` |
 
 Same exchange/routing key for fan-out events uses **separate subscriber queues** (e.g. `ORDER_CONFIRMED_INVENTORY_QUEUE` vs `ORDER_CONFIRMED_NOTIFICATION_QUEUE`; `ORDER_CANCELLED_*` modules vs `ORDER_CANCELLED_NOTIFICATION_QUEUE`).
+
+**Resiliência (plataforma externa):** quando `app.integrations.notification-platform.enabled=true`, `OAuth2NotificationPlatformClient` publica via `NotificationPlatformApi` (`@HttpExchange`) com `@Retryable`/`@Recover` e `NotificationPlatformConcurrencyLimiter`.
 
 **Design note:** saga failures converge on a single `OrderCancelledEvent` consumer in notification — do **not** consume `StockReservationFailed` or `PaymentFailed` separately (avoids duplicate emails).
 
