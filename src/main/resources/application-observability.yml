@@ -1,0 +1,38 @@
+# Ative com: SPRING_PROFILES_ACTIVE=local,observability
+# e suba o serviço jaeger do docker-compose.
+#
+# JDBC: Spring Boot não instrumenta DataSource sozinho — usa Datasource Micrometer
+# (https://docs.spring.io/spring-boot/reference/actuator/observability.html)
+jdbc:
+  includes: CONNECTION,QUERY
+  datasource-proxy:
+    logging: slf4j
+    include-parameter-values: false
+    query:
+      enable-logging: true
+      log-level: DEBUG
+      logger-name: jdbc.query
+
+management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+  otlp:
+    tracing:
+      export:
+        enabled: true
+      # Jaeger v2: OTLP gRPC (4317) é o transporte mais estável no all-in-one
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+      transport: grpc
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    io.opentelemetry.exporter.internal.http.HttpExporter: WARN
+    jdbc.query: DEBUG

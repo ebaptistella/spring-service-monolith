@@ -1,0 +1,52 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+  liquibase:
+    enabled: true
+  modulith:
+    events:
+      externalization:
+        enabled: true
+  cache:
+    type: redis
+
+app:
+  integrations:
+    notification-platform:
+      enabled: false
+  identity:
+    jit-provisioning: true
+  security:
+    oauth2-enabled: true
+    strategies:
+      jwt-external: true
+      local: false
+      social: false
+    jwt:
+      keycloak-issuer: ${keycloak.issuer-uri}
+    permit-all-patterns:
+      - /api/v1/auth/**
+      - /actuator/**
+      - /swagger-ui/**
+      - /api-docs/**
+      - /v3/api-docs/**
+
+sentry:
+  dsn:
+
+management:
+  tracing:
+    sampling:
+      probability: 0
+  otlp:
+    tracing:
+      export:
+        enabled: false
+
+logging:
+  level:
+    root: WARN
+    dev.ebaptistella.monolith: INFO

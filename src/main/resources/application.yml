@@ -1,0 +1,189 @@
+spring:
+  application:
+    name: spring-service-monolith
+  threads:
+    virtual:
+      enabled: true
+  http:
+    client:
+      connect-timeout: 5s
+      read-timeout: 10s
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/monolith}
+    username: ${SPRING_DATASOURCE_USERNAME:monolith}
+    password: ${SPRING_DATASOURCE_PASSWORD:monolith}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:monolith}
+    password: ${SPRING_RABBITMQ_PASSWORD:monolith}
+    template:
+      observation-enabled: true
+    listener:
+      simple:
+        default-requeue-rejected: false
+        observation-enabled: true
+  cache:
+    type: redis
+  modulith:
+    events:
+      externalization:
+        enabled: true
+      republish-outstanding-events-on-restart: true
+      jdbc:
+        schema-initialization:
+          enabled: false
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8091/realms/monolith}
+      client:
+        registration:
+          notification-platform:
+            provider: notification-platform
+            client-id: ${NOTIFICATION_PLATFORM_CLIENT_ID:monolith}
+            client-secret: ${NOTIFICATION_PLATFORM_CLIENT_SECRET:secret}
+            authorization-grant-type: client_credentials
+            scope: notifications.write
+        provider:
+          notification-platform:
+            token-uri: ${NOTIFICATION_PLATFORM_TOKEN_URI:http://localhost:8090/oauth2/token}
+          google:
+            issuer-uri: https://accounts.google.com
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,modulith
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  observations:
+    annotations:
+      enabled: true
+  tracing:
+    sampling:
+      probability: ${OTEL_SAMPLING_PROBABILITY:1.0}
+    propagation:
+      type: w3c
+  otlp:
+    tracing:
+      export:
+        enabled: ${OTEL_EXPORT_ENABLED:false}
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+      transport: ${OTEL_EXPORTER_OTLP_TRANSPORT:grpc}
+
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${SENTRY_ENVIRONMENT:local}
+  traces-sample-rate: ${SENTRY_TRACES_SAMPLE_RATE:0.1}
+  send-default-pii: false
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+app:
+  finance:
+    payment-gateway:
+      always-fail: false
+  integrations:
+    notification-platform:
+      enabled: ${NOTIFICATION_PLATFORM_ENABLED:false}
+      base-url: ${NOTIFICATION_PLATFORM_BASE_URL:http://localhost:8090}
+      registration-id: notification-platform
+  rabbit:
+    dead-letter:
+      enabled: ${APP_RABBIT_DEAD_LETTER_ENABLED:true}
+      max-body-length: ${APP_RABBIT_DEAD_LETTER_MAX_BODY_LENGTH:4096}
+    listener:
+      retry:
+        enabled: ${APP_RABBIT_LISTENER_RETRY_ENABLED:true}
+        max-attempts: ${APP_RABBIT_LISTENER_RETRY_MAX_ATTEMPTS:3}
+        initial-interval: ${APP_RABBIT_LISTENER_RETRY_INITIAL_INTERVAL:1s}
+        multiplier: ${APP_RABBIT_LISTENER_RETRY_MULTIPLIER:2.0}
+        max-interval: ${APP_RABBIT_LISTENER_RETRY_MAX_INTERVAL:10s}
+  identity:
+    jit-provisioning: ${IDENTITY_JIT_PROVISIONING:true}
+  security:
+    oauth2-enabled: false
+    strategies:
+      jwt-external: ${JWT_EXTERNAL_ENABLED:false}
+      local: ${LOCAL_AUTH_ENABLED:false}
+      social: ${SOCIAL_AUTH_ENABLED:false}
+    authorization-server:
+      client-id: ${LOCAL_AUTH_CLIENT_ID:monolith-local}
+      client-secret: ${LOCAL_AUTH_CLIENT_SECRET:local-secret}
+      issuer: ${LOCAL_JWT_ISSUER:http://localhost:8080}
+    jwt:
+      local-issuer: ${LOCAL_JWT_ISSUER:http://localhost:8080}
+      keycloak-issuer: ${KEYCLOAK_ISSUER:http://localhost:8091/realms/monolith}
+    external:
+      provider: ${EXTERNAL_AUTH_PROVIDER:keycloak}
+      token-uri: ${KEYCLOAK_TOKEN_URI:}
+      client-id: ${KEYCLOAK_CLIENT_ID:monolith-api}
+      client-secret: ${KEYCLOAK_CLIENT_SECRET:monolith-api-secret}
+      registration-available: ${KEYCLOAK_REGISTRATION_ENABLED:false}
+      registration-url: ${KEYCLOAK_REGISTRATION_URL:}
+      admin-console-url: ${KEYCLOAK_ADMIN_URL:http://localhost:8091}
+    permit-all-patterns:
+      - /api/v1/auth/**
+      - /oauth2/token
+      - /oauth2/authorize
+      - /login/**
+      - /actuator/**
+      - /swagger-ui/**
+      - /api-docs/**
+      - /v3/api-docs/**
+
+server:
+  port: ${SERVER_PORT:8080}
+
+logging:
+  structured:
+    format:
+      console: ecs
+    ecs:
+      service:
+        name: ${spring.application.name}
+    json:
+      context:
+        include: traceId,spanId,idempotencyKey
+  level:
+    root: INFO
+    dev.ebaptistella.monolith: DEBUG
+    org.springframework.modulith: INFO

@@ -1,0 +1,61 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  threads:
+    virtual:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+  liquibase:
+    enabled: true
+  modulith:
+    events:
+      externalization:
+        enabled: true
+  cache:
+    type: redis
+
+app:
+  rabbit:
+    dead-letter:
+      enabled: true
+    listener:
+      retry:
+        enabled: false
+  integrations:
+    notification-platform:
+      enabled: false
+  identity:
+    jit-provisioning: true
+  security:
+    oauth2-enabled: false
+    strategies:
+      jwt-external: false
+      local: false
+      social: false
+    jwt:
+      local-issuer: http://localhost:8080
+      keycloak-issuer: http://localhost:8091/realms/monolith
+    permit-all-patterns:
+      - /**
+
+sentry:
+  dsn:
+
+management:
+  tracing:
+    sampling:
+      probability: 0
+  otlp:
+    tracing:
+      export:
+        enabled: false
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    root: WARN
+    dev.ebaptistella.monolith: INFO

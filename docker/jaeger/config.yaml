@@ -1,0 +1,88 @@
+# Jaeger v2 all-in-one (OTLP + UI). See https://www.jaegertracing.io/docs/2.dev/deployment/frontend-ui/
+service:
+  extensions: [jaeger_storage, jaeger_query, remote_sampling, healthcheckv2, expvar, zpages]
+  pipelines:
+    traces:
+      receivers: [otlp, jaeger, zipkin]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    resource:
+      service.name: jaeger
+    metrics:
+      level: detailed
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}"
+                port: 8888
+    logs:
+      level: info
+
+extensions:
+  jaeger_query:
+    storage:
+      traces: some_storage
+    ui:
+      config_file: /etc/jaeger/ui-config.json
+    http:
+      endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:16686"
+    grpc:
+      endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:16685"
+
+  jaeger_storage:
+    backends:
+      some_storage:
+        memory:
+          max_traces: 100000
+
+  remote_sampling:
+    file:
+      path:
+      default_sampling_probability: 1
+      reload_interval: 1s
+    http:
+      endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:5778"
+    grpc:
+      endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:5779"
+
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:13133"
+
+  expvar:
+    endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:27777"
+
+  zpages:
+    endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:27778"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:4317"
+      http:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:4318"
+
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:14250"
+      thrift_http:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:14268"
+      thrift_binary:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:6832"
+      thrift_compact:
+        endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:6831"
+
+  zipkin:
+    endpoint: "${env:JAEGER_LISTEN_HOST:-0.0.0.0}:9411"
+
+processors:
+  batch:
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: some_storage

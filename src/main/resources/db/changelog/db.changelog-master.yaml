@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - include:
+      file: changes/001-modulith-event-publication.sql
+      relativeToChangelogFile: true
+  - include:
+      file: changes/002-identity-create-accounts-tables.sql
+      relativeToChangelogFile: true
+  - include:
+      file: changes/003-customer-create-customers-table.sql
+      relativeToChangelogFile: true
+  - include:
+      file: changes/004-catalog-create-products-skus.sql
+      relativeToChangelogFile: true
+  - include:
+      file: changes/005-inventory-create-stock.sql
+      relativeToChangelogFile: true
+  - include:
+      file: changes/006-order-create-orders.sql
+      relativeToChangelogFile: true
+  - include:
+      file: changes/007-finance-create-payments.sql
+      relativeToChangelogFile: true

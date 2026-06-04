@@ -1,0 +1,119 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: monolith
+      POSTGRES_USER: monolith
+      POSTGRES_PASSWORD: monolith
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monolith -d monolith"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: monolith
+      RABBITMQ_DEFAULT_PASS: monolith
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8080
+    volumes:
+      - ./docker/keycloak/realm-monolith.json:/opt/keycloak/data/import/realm-monolith.json:ro
+    ports:
+      - "8091:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.18.0
+    environment:
+      JAEGER_LISTEN_HOST: 0.0.0.0
+    command:
+      - "--config"
+      - "/etc/jaeger/config.yaml"
+    volumes:
+      - ./docker/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+      - ./docker/jaeger/ui-config.json:/etc/jaeger/ui-config.json:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "16686:16686"
+      - "8888:8888"
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+      jaeger:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local,observability
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/monolith
+      SPRING_DATASOURCE_USERNAME: monolith
+      SPRING_DATASOURCE_PASSWORD: monolith
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: monolith
+      SPRING_RABBITMQ_PASSWORD: monolith
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
+      OTEL_EXPORT_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OTEL_SERVICE_NAME: spring-service-monolith
+      JWT_EXTERNAL_ENABLED: "true"
+      LOCAL_AUTH_ENABLED: "true"
+      LOCAL_JWT_ISSUER: http://localhost:8080
+      JWT_ISSUER_URI: http://keycloak:8080/realms/monolith
+      KEYCLOAK_ISSUER: http://localhost:8091/realms/monolith
+      KEYCLOAK_TOKEN_URI: http://keycloak:8080/realms/monolith/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: monolith-api
+      KEYCLOAK_CLIENT_SECRET: monolith-api-secret
+      KEYCLOAK_ADMIN_URL: http://localhost:8091
+    ports:
+      - "8080:8080"

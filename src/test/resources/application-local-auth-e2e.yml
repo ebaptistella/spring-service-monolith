@@ -1,0 +1,54 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+  liquibase:
+    enabled: true
+  modulith:
+    events:
+      externalization:
+        enabled: true
+  cache:
+    type: redis
+
+app:
+  integrations:
+    notification-platform:
+      enabled: false
+  identity:
+    jit-provisioning: true
+  security:
+    strategies:
+      jwt-external: false
+      local: true
+      social: false
+    authorization-server:
+      issuer: ${local.auth.issuer}
+    jwt:
+      local-issuer: ${local.auth.issuer}
+    permit-all-patterns:
+      - /api/v1/auth/**
+      - /oauth2/**
+      - /actuator/**
+      - /swagger-ui/**
+      - /api-docs/**
+      - /v3/api-docs/**
+
+sentry:
+  dsn:
+
+management:
+  tracing:
+    sampling:
+      probability: 0
+  otlp:
+    tracing:
+      export:
+        enabled: false
+
+logging:
+  level:
+    root: WARN
+    dev.ebaptistella.monolith: INFO

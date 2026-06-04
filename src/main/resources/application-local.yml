@@ -1,0 +1,12 @@
+spring:
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+
+# Sem coletor OTLP no host → evita erros de conexão em localhost:4317.
+# Com docker compose (perfil observability): export é ligado via OTEL_EXPORT_ENABLED.
+management:
+  otlp:
+    tracing:
+      export:
+        enabled: ${OTEL_EXPORT_ENABLED:false}
