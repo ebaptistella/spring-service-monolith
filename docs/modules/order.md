@@ -63,8 +63,8 @@ Mapped only at `diplomat/http_server` boundary via adapters.
 
 | Area | Types |
 |------|--------|
-| **http_server** | `OrderHttpServer` — `/api/v1/orders` |
-| **jpa** | `OrderEntity`, `OrderLineEntity`, `OrderJpaRepository`, `OrderPersistence` |
+| **http_server** | `OrderHttpServer` — `/api/v1/orders`; `@Observed` por endpoint |
+| **jpa** | `OrderEntity`, `OrderLineEntity`, `OrderJpaRepository`, `OrderPersistence` — `lines` em `LAZY` + `@BatchSize`; `@EntityGraph` em `findById` / `findByIdempotencyKey` |
 | **producer** | `OrderEventProducer` — Spring `ApplicationEventPublisher` + `@Externalized` routing |
 | **consumer** | `StockReservedConsumer`, `StockReservationFailedConsumer`, `PaymentCapturedConsumer`, `PaymentFailedConsumer` (`@Observed`, no application logging) |
 | **outbound** | `CatalogGateway`, `InventoryGateway`, `CustomerGateway` (+ `Local*` implementations) |
@@ -102,4 +102,6 @@ No `inbound` SPI in this module; sync reads use outbound gateways to other modul
 |------|-----|----------|
 | `OrderRulesTest` | unit | Placement rules, spend limit, status guards (`shouldSkip*`) |
 | `PlaceOrderControllerTest` | unit | Placement orchestration (mocked diplomat) |
-| `OrderFlowE2ETest` | e2e | Full order flow via HTTP + messaging |
+| `OrderModuleIT` | integration | Modulith scenario — `PlaceOrderController` publica `OrderPlacedEvent` |
+| `OrderFlowE2ETest` | e2e | Happy path + rejeições síncronas via HTTP + messaging |
+| `OrderPaymentFailureE2ETest` | e2e | Saga com `app.finance.payment-gateway.always-fail=true` → cancelamento + e-mail |

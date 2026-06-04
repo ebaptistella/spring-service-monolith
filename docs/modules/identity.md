@@ -39,9 +39,11 @@ Account management, multi-provider identity resolution, local authentication, an
 
 ## diplomat
 
-- `http_server/AuthHttpServer`, `AccountHttpServer` — HTTP, status codes, wire translation
-- `jpa/AccountPersistence` — persistence
-- `outbound/KeycloakTokenClient` — OAuth2 token proxy
+- `http_server/AuthHttpServer`, `AccountHttpServer` — HTTP, status codes, wire translation; `@Observed` por endpoint
+- `jpa/AccountPersistence`, `AccountEntity` — `roles` em `LAZY` + `@BatchSize`; `@EntityGraph` no repositório para auth
+- `outbound/KeycloakTokenClient` — orquestra login/token externo
+- `outbound/KeycloakTokenApi` — cliente HTTP declarativo (`@HttpExchange`) para token Keycloak
+- `config/KeycloakHttpClientConfiguration` — `HttpServiceProxyFactory` + `RestClient`
 - `security/LocalTokenIssuer` — local JWT issuance
 
 ## Integração
@@ -53,7 +55,7 @@ Account management, multi-provider identity resolution, local authentication, an
 
 ## Testes
 
-- `AuthEntrypointControllerTest`, `ExternalAuthProxyE2ETest`, `LocalAuthE2ETest`
+- `AuthEntrypointControllerTest`, `ExternalAuthProxyE2ETest`, `LocalAuthE2ETest`, `ZCustomerJwtAuthE2ETest`
 
 ## Auth strategies
 
@@ -69,5 +71,3 @@ Clients call **`GET /api/v1/auth/config`** for capabilities. All strategies conv
 
 - `POST /api/v1/auth/register` (local) requires `X-Idempotency-Key`; account stores `idempotency_key` + fingerprint.
 - `/auth/login` and `/auth/token` are exempt from the header filter.
-
-## Testes

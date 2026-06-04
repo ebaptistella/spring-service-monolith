@@ -2,7 +2,7 @@
 
 ## 1. Module responsibility (Modulith boundary)
 
-Email dispatch execution: validates dispatch requests, sends via pluggable `EmailSender` (in-memory for tests, SMTP in production), with Resilience4j circuit breaker/retry and Sentry on failure.
+Email dispatch execution: validates dispatch requests, deduplicates by `dispatchId`, sends via pluggable `EmailSender` (in-memory for tests, SMTP in production), with spring-retry on the sender delegate and Sentry on failure.
 
 Event-driven only (no HTTP). `allowedDependencies = {"shared"}`.
 
@@ -24,7 +24,8 @@ Event-driven only (no HTTP). `allowedDependencies = {"shared"}`.
 
 | Controller | Flow |
 |------------|------|
-| `SendEmailController` | Validate → `EmailSender.send` with `@CircuitBreaker` / `@Retry`; fallback throws `EmailDispatchException` + Sentry |
+| `SendEmailController` | Validate → dedup by `dispatchId` → `ResilientEmailSender.send` |
+| `ResilientEmailSender` | `@Retryable` + `@Recover` → `EmailSender`; fallback throws `EmailDispatchException` + Sentry |
 
 ## 5. adapters
 
@@ -48,7 +49,7 @@ No module HTTP wire. Inbound async: `shared.wire.in.events.EmailDispatchRequeste
 | **outbound** | — |
 | **smtp** | `SmtpEmailSender` |
 | **inmemory** | `InMemoryEmailSender` (also `SentEmailRecorder`) |
-| **Root** | `EmailSender` interface |
+| **Root** | `EmailSender` interface, `ResilientEmailSender` |
 
 ## 8. Sync integration and async
 
@@ -77,7 +78,7 @@ Publisher: `notification` (`NotificationEventProducer`).
 |------|--------|
 | `EmailDispatchEventAdapterTest` | Wire → model |
 | `ArchitectureTest` | Consumer → adapter; logic isolation |
-| `CustomerRegistrationE2ETest`, `AuthenticatedCustomerE2ETest`, `OrderFlowE2ETest`, `LocalAuthE2ETest` | Assert sent mail via `SentEmailRecorder` / in-memory sender |
+| `CustomerRegistrationE2ETest`, `ZCustomerJwtAuthE2ETest`, `OrderFlowE2ETest`, `LocalAuthE2ETest` | Assert sent mail via `SentEmailRecorder` / in-memory sender |
 | `RabbitTopologyConfigurationTest`, `EventRoutesTest` | Email queue topology |
 
 No dedicated `SendEmailController` unit test.
